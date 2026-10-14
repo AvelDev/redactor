@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: |
+              dist/*-setup.exe
+              dist/*-portable.exe
+          - os: macos-latest
+            artifact: dist/*.dmg
+          - os: ubuntu-22.04
+            artifact: dist/*.AppImage
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_LINK_MODE: copy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Qt and AppImage runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libfuse2 file
+      - run: uv sync --locked
+      - run: uv run python scripts/fetch_tessdata.py
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(uv run python -c 'import redactor; print(redactor.__version__)')" >> "$GITHUB_ENV"
+      - name: Build application folder
+        run: uv run pyinstaller packaging/redactor.spec --noconfirm --distpath dist --workpath build/pyinstaller
+      - name: Self-test the frozen build
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then dist/Redactor.app/Contents/MacOS/Redactor --self-test
+          elif [ "$RUNNER_OS" = "Windows" ]; then dist/Redactor/Redactor.exe --self-test
+          else dist/Redactor/Redactor --self-test; fi
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        run: |
+          uv run python scripts/make_ico.py
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc /DAppVersion=${{ env.VERSION }} packaging\windows\installer.iss
+      - name: Windows portable executable
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          uv run pyinstaller packaging/redactor-portable.spec --noconfirm --distpath dist --workpath build/portable
+          "dist/Redactor-$VERSION-windows-x64-portable.exe" --self-test
+      - name: macOS disk image
+        if: runner.os == 'macOS'
+        run: packaging/macos/make_dmg.sh "$VERSION"
+      - name: Linux AppImage
+        if: runner.os == 'Linux'
+        run: packaging/linux/make_appimage.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: redactor-${{ matrix.os }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

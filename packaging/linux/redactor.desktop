@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Redactor
+GenericName=PDF Redaction
+GenericName[pl]=Redakcja PDF
+Comment=Permanently remove text and data from PDF files
+Comment[pl]=Trwale usuwaj tekst i dane z plików PDF
+Exec=Redactor %F
+Icon=redactor
+Terminal=false
+Categories=Office;Graphics;Viewer;
+MimeType=application/pdf;
