@@ -83,7 +83,11 @@ def test_refuses_to_overwrite_source(sample_pdf):
     with pytest.raises(SameFileError):
         redact(doc, _marks(doc), sample_pdf)
     with pytest.raises(SameFileError):
-        redact(doc, _marks(doc), sample_pdf.parent / "." / sample_pdf.name.upper())
+        redact(doc, _marks(doc), sample_pdf.parent / "." / sample_pdf.name)
+    upper = sample_pdf.parent / sample_pdf.name.upper()
+    if upper.exists():  # case-insensitive file system (Windows, default macOS): same file
+        with pytest.raises(SameFileError):
+            redact(doc, _marks(doc), upper)
 
 
 def test_label_and_color(sample_pdf, tmp_path):
